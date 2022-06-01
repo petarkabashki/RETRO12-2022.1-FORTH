@@ -1,0 +1,63 @@
+# Loops
+
+RETRO provides several words for creating loops.
+
+## Unconditional Loops
+
+An unconditional loop begins with `repeat` and ends with `again`.
+
+    :test repeat #1 n:put sp again ;
+    test
+
+Unconditional loops must be inside a definition or quote. To exit
+one of these, use `0;`, `-if;` or `if;`.
+
+    :test #100 repeat 0; dup n:put sp n:dec again ;
+    test
+
+    :test #100 repeat dup #50 eq? [ 'done! s:put nl ] if; n:dec again ;
+    test
+
+You can also achieve this via recursion:
+
+    :test 0; dup n:put sp n:dec test ;
+    #100 test
+
+Be careful with recursion as the virtual machine will have a limited
+amount of space for the address stack and recursing too many times
+can cause a stack overflow.
+
+## Conditional Loops
+
+There are two conditional looping combinators: `while` and `until`.
+Both take a quote and execute it, checking a returned flag to decide
+when to stop running.
+
+    #0 [ dup n:put sp n:inc dup #10 eq? ] until
+    #10 [ dup n:put sp n:dec dup n:-zero? ] while
+
+## Counted Loops
+
+There are two combinators for counted loops. These are `times` and
+`indexed-times`.
+
+    #0 #10 [ dup n:put sp n:inc ] times nl
+    #10 [ I n:put sp ] indexed-times
+
+The `indexed-times` provides an index via the `I`, `J`, and
+`K` words. `I` will be the index of the current loop, with `J` and
+`K` being the indexes of the next two older loops.
+
+The loop indexes can be accessed outside the loop body:
+
+    :display I n:square n:put sp ;
+    :squares [ display ] indexed-times nl ;
+    #100 squares
+
+## Tradeoffs
+
+The unconditional loop form is more efficient as it's just a
+simple jump operation. The `times` counted loops are a little
+slower, but can be cleaner and more readable in many cases. The
+`indexed-times` form is significantly slower than the other
+two forms.

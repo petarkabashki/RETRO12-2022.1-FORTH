@@ -1,0 +1,17 @@
+*.o
+*.exe
+forth
+*-forth
+kernel.c
+/params*
+/jump.fth
+/threading.fth
+/target.fth
+/test-*
+conf.mk
+*-stamp
+packages
+*~
+TMP
+forth.html
+forth.js

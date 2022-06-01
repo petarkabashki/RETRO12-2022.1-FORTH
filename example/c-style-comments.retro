@@ -1,0 +1,34 @@
+# C Style Comments
+
+This adds support for comments with embedded spaces. It is useful
+for quickly commenting out portions of lines or larger chunks of
+code during debugging.
+
+Specifically, this provides for C style /* ... */ comments. It
+works by patching `interpret` to make it ignore tokens until the
+token is `*/`.
+
+~~~
+{{
+  :done?   '*/ s:eq? ;
+  :revert  &interpret unhook ;
+---reveal---
+  :/* (-a) [ (a-) done? &revert if ] &interpret set-hook ; immediate
+}}
+~~~
+
+# Test Case
+
+```
+:test /* hello world */
+  #1
+
+/*
+this is a test. drop stuff.
+more lines
+*/
+
+  #2 + /* display */ n:put nl ;
+
+test
+```

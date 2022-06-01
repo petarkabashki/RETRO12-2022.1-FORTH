@@ -1,0 +1,155 @@
+# FIFO Queue
+
+This implements a FIFO queue. It was based on the code in
+a comp.lang.forth post titled "A queue without move", but
+has been refactored and expanded slightly. See
+https://narkive.com/khcCauFY for the original posting.
+
+# Limits
+
+The queue size needs to be a power of 2.
+
+# Code
+
+~~~
+:q:new    (n-a) here [ #0 , #0 , dup , allot ] dip ;
+:q:named  (ns-) [ q:new ] dip const ;
+:q:head   (q-a) ; immediate
+:q:tail   (q-a) n:inc ;
+:q:size   (q-n) #2 + fetch ;
+:q:list   (q-a) #3 + ;
+:q:mask   (q-n) q:size n:dec ;
+:q:length (q-n) [ q:head fetch ] [ q:tail fetch ] bi - ;
+:q:free   (q-n) &q:size sip q:length - ;
+:q:clear  (q-)  [ q:head v:off ] [ q:tail v:off ] bi ;
+:q:masked (aq-n) q:mask swap fetch and ;
+:q:empty? (q-f)  q:length n:zero? ;
+:q:full?  (q-f)  &q:length &q:size bi eq? ;
+:q:reset0 (q-)   dup q:empty? &q:clear &drop choose ;
+
+{{
+  'R var
+
+  (for_adding_values)
+  :append-value swap @R q:list @R q:head @R q:masked + store
+                @R q:head v:inc ;
+ 
+  (for_fetching_values)
+  :peek-value   @R q:list  @R q:tail @R q:masked + fetch ;
+  :fetch-value  peek-value @R q:tail v:inc swap @R q:reset0 ;
+---reveal---
+  :q:add (nq-f)
+    [ !R ] [ q:free n:strictly-positive? dup ] bi
+    [ append-value ] if; nip ;
+
+  :q:get (q-nf)
+    [ !R ] [ q:length n:strictly-positive? dup ] bi
+    [ fetch-value ] if; #0 swap ;
+
+  :q:peek (q-nf)
+    [ !R ] [ q:length n:strictly-positive? dup ] bi
+    [ peek-value swap ] if; #0 swap ;
+}}
+~~~
+
+I am separating out the display code as it's fairly large
+and some may want to leave it out. (When compiled, this
+increases the size by more than 50%. While useful, the size
+hit may make it undesirable on systems with tight memory
+constraints)
+
+~~~
+{{
+  'R var
+
+  (for_display)
+  :head?    @R q:tail @R q:masked eq? ;
+  :tail?    @R q:head fetch n:dec @R q:mask and eq? ;
+  :display  nl I dup n:put sp dup @R q:list + fetch n:put sp ;
+  :indicators dup head? [ '<--_tail s:put ] if
+                  tail? [ '<--_head s:put ] if ;
+---reveal---
+  :q:put (q-)
+    [ !R ] [ q:free ] [ q:length ] tri
+    '\nin_que:_%n,_free:_%n s:format s:put
+    @R q:length n:strictly-positive?
+    [ @R q:size [ display indicators ] indexed-times ]
+    [ 'queue_is_empty s:put nl ] choose ;
+}}
+~~~
+
+# Usage
+
+The original didn't include any documentation, so here are a few
+brief notes on this.
+
+Creating a new queue:
+
+    q:new
+    q:named
+
+Examples:
+
+    #16 q:new        (returns_a_pointer_to_the_queue)
+    #16 'Q q:named   (create_a_queue_and_create_a_constant)
+                     (pointing_to_it)
+
+See the Limits section for a note on the sizing.
+
+Adding Values:
+
+    #1 Q q:add
+    #2 Q q:add
+
+The `q:add` returns a flag indicating success or fail. Check or
+discard this as necessary for your application.
+
+Retreive Values:
+
+    Q q:get
+    Q q:get
+
+Like `q:add`, this returns a flag indicating success or failure.
+This also returns the value, or a value of 0 on failure.
+
+Empty the Queue:
+
+    Q q:clear
+
+Queue Queries:
+
+    Q q:size
+    Q q:length
+
+# A Test
+
+```
+#16 'Q q:named
+Q q:empty? n:put nl
+#100 Q q:add drop
+Q q:empty? n:put nl
+Q q:get drop-pair
+Q q:empty? n:put nl nl
+
+Q q:full? n:put nl
+#16 [ #100 Q q:add drop ] times
+Q q:full? n:put nl
+Q q:size [ Q q:get drop-pair ] times
+Q q:full? n:put nl nl
+
+#100 Q q:add
+#200 Q q:add
+#300 Q q:add
+#400 Q q:add
+#500 Q q:add dump-stack nl reset
+Q q:put
+nl 'values:_ s:put
+Q q:get drop n:put sp
+Q q:get drop n:put sp
+Q q:peek drop n:put sp
+Q q:peek drop n:put sp
+Q q:peek drop n:put sp
+Q q:get drop n:put sp
+Q q:get drop n:put nl nl
+Q q:put
+```

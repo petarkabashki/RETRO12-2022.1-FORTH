@@ -1,0 +1,253 @@
+#!/usr/bin/env retro
+
+## Casket v5
+
+This is a small HTTP/1.1 server written in Retro Forth.
+
+First, some configuration options. Since this will run under
+inetd there's no need to specify the port. But the path to the
+files to serve is rather useful, so define it here.
+
+~~~
+'/home/crc/www 'WEBROOT s:const
+~~~
+
+Next, I need to handle the incoming requests. In v0 these were
+just discarded, but here we actually want to store the request
+
+So an incoming request will look like:
+
+    GET / HTTP/1.1
+    Host: retroforth.org
+
+With the lines ending in a CR,LF sequence.
+
+I need to allocate space for the data I care about. There are
+three items:
+
+- The `Requested` file
+- The desired virtual `Host`
+- The query string (if any)
+
+~~~
+'Requested d:create #8193 allot
+'Host      d:create #1025 allot
+'GET-Query var
+~~~
+
+The header processor will read each item and store the `Host`
+and `Requested` file. Everything else is ignored.
+
+I implement `eot?` to decide if a line (or field) indicator
+has been reached. This is used by `s:get` to decide when the
+input should stop. `s:get` records the characters read into
+the specified buffer. And finally, `read-request` reads the
+input.
+
+~~~
+'Done var
+
+:eot? (c-f)
+  [ ASCII:CR eq? ]
+  [ ASCII:LF eq? ]
+  [ ASCII:SPACE eq? ] tri or or ;
+
+:s:get (a-)
+  buffer:set [ c:get [ buffer:add ] [ eot? ] bi ] until
+  buffer:get drop ;
+
+:read-request (-)
+  [ here s:get
+    here s:to-upper 'GET   s:eq? [ &Requested s:get &Done v:inc ] if
+    here s:to-upper 'HOST: s:eq? [ &Host      s:get &Done v:inc ] if
+    @Done #2 eq? ] until ;
+~~~
+
+Next is reading in the desired file. An initial request may be
+just a **/**. In this case, Casket will replace the `Requested`
+filename with **/index.html**. In the odd case that a file is
+requested without a leading **/**, I have a word to add this.
+And then a word that constructs a filename.
+
+This also has a word `check-for-params` that is used to separate
+the requested file from any query string that may be present.
+
+~~~
+:map-/-to-index (-)
+  &Requested '/ s:eq?
+    [ '/index.html &Requested s:copy ] if ;
+
+:ensure-leading-/ (-)
+  @Requested $/ -eq?
+    [ '/ &Requested s:append s:keep &Requested s:copy ] if ;
+
+:check-for-params (-)
+  &Requested $? s:contains/char?
+    [ &Requested $? s:split/char drop dup n:inc !GET-Query #0 swap store ] if ;
+
+:filename (-s)
+  check-for-params map-/-to-index ensure-leading-/
+  &Requested &Host WEBROOT '%s/%s%s s:format
+  dup '%s/index.html s:format file:exists? [ '%s/index.html s:format ] if ;
+~~~
+
+Next, I need to determine the file type. I'll do this by taking
+a look at the extension, and mapping this to a MIME type.
+
+~~~
+:filename-w/o-path
+  WEBROOT s:length &Host s:length + filename +
+  [ $/ s:index/char ] sip + ;
+
+:get-mime-type (-s)
+  filename-w/o-path [ $. s:index/char ] sip +
+  (fsp)
+    '.fsp   [ 'application/fsp          ] s:case
+  (textual_files)
+    '.txt   [ 'text/plain               ] s:case
+    '.md    [ 'text/markdown            ] s:case
+    '.htm   [ 'text/html                ] s:case
+    '.html  [ 'text/html                ] s:case
+    '.css   [ 'text/css                 ] s:case
+    '.c     [ 'text/plain               ] s:case
+    '.h     [ 'text/plain               ] s:case
+    '.forth [ 'text/plain               ] s:case
+    '.retro [ 'text/plain               ] s:case
+  (image_files)
+    '.png   [ 'image/png                ] s:case
+    '.jpg   [ 'image/jpeg               ] s:case
+    '.jpeg  [ 'image/jpeg               ] s:case
+    '.gif   [ 'image/gif                ] s:case
+    '.bmp   [ 'image/bmp                ] s:case
+  (application_files)
+    '.pdf   [ 'application/pdf          ] s:case
+    '.gz    [ 'application/gzip         ] s:case
+    '.zip   [ 'application/zip          ] s:case
+    '.json  [ 'application/json         ] s:case
+    '.js    [ 'application/x-javascript ] s:case
+    '.xml   [ 'application/xml          ] s:case
+    '.tar.gz      [ 'application/gzip   ] s:case
+    '.retro.html  [ 'text/html          ] s:case
+  drop 'text/plain ;
+~~~
+
+Using these, I can construct a word to read in the file and
+send it to the client.
+
+Reading files is now a bit more involved, since images and
+other formats have binary data.
+
+If the mime type is application/fsp, this will run the code
+in the file. The code should output the necessary headers
+and content.
+
+~~~
+'FID var
+
+:read-file (-an)
+  here
+  filename file:R file:open !FID
+  @FID file:size [ [ @FID file:read , ] times ] sip
+  @FID file:close ;
+
+:eol  (-)   ASCII:CR c:put ASCII:LF c:put ;
+
+:send-file (-)
+  get-mime-type
+  dup 'application/fsp s:eq?
+  [ drop filename include ]
+  [ 'Content-type:_%s s:format s:put eol eol
+    read-file [ fetch-next c:put ] times drop ] choose ;
+~~~
+
+In the above, `eol` will send an end of line sequence.
+
+The last support word is a handler for 404 errors. This
+will send the 404 status code and a human readable error
+message.
+
+~~~
+:404 'HTTP/1.1_404_OK s:put eol
+     'Content-type:_text/html s:put eol eol
+     'ERROR_404:_FILE_NOT_FOUND s:put eol ;
+~~~
+
+And now for the top level server.
+
+Receive a request:
+
+~~~
+read-request
+~~~
+
+See if the file exists:
+
+~~~
+filename file:exists?
+~~~
+
+Send an "200 OK" response and the file (or a 404 if
+the file wasn't found):
+
+~~~
+[ 'HTTP/1.1_200_OK s:put eol send-file ]
+[ 404 ] choose
+~~~
+
+And the code for Casket is done.
+
+----
+
+## Using Casket
+
+Casket requires [Retro](http://forthworks.com/retro) and a Unix system
+with inetd.
+
+Install Retro and put the `casket.forth` somewhere. Then add a
+configuration line to your `/etc/inetd.conf`. I use:
+
+    http    stream  tcp     nowait/6/30/2   casket    /home/crc/servers/casket.forth
+
+Restart inetd.
+
+Edit the `WEBROOT` in `casket.forth` to point to your web directory.
+Then go to the web directory and create a directory for each domain.
+E.g.,
+
+    /home/crc/www/casket.forthworks.com
+
+Put your `index.html` and other files here and try accessing your website.
+
+## Download
+
+* [casket.forth](http://forth.works:8080/casket.forth)
+* [retro forth](http://forthworks.com/r/latest.tar.gz)
+
+----
+
+## Real World Uses
+
+Casket has been in use since the second half of 2018 serving a number of
+small websites. It's also used to host the Casket project page you are
+looking at.
+
+---
+
+## License and Copyright
+
+Copyright (c) 2018 - 2019, Charles Childers
+
+Permission to use, copy, modify, and/or distribute this software
+for any purpose with or without fee is hereby granted, provided
+that the copyright notice and this permission notice appear in
+all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS
+ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+OF THIS SOFTWARE.

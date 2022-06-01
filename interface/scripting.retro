@@ -1,0 +1,67 @@
+# Scripting Support
+
+This is the scripting interface words for use with retro-unix
+or other interfaces providing device type 9 support.
+
+## Rev. 0
+
+The initial version of this I/O device provides support for some
+basic interactions.
+
+- obtaining the name of the script
+- obtaining the number of arguments passed
+- obtaining the arguments passed
+- "including" a file (which has RETRO process the file as inuput)
+
+## Rev. 1
+
+In 2020.10, the device was extended to add support for new additional
+introspection and control of the `include` process.
+
+- obtaining the current file name
+- obtaining the current line number
+- direct RETRO to ignore the rest of the current line
+- direct RETRO to ignore any remaining lines in the file
+
+## Rev. 2
+
+Adds support for `abort`.
+
+# The Code
+
+~~~
+{{
+  :script:operation
+    #9 io:scan-for
+      dup n:negative? [ drop 'Error:_device_(0009)_not_found s:put nl ] if;
+      io:invoke ;
+---reveal---
+  :script:arguments (-n)             #0 script:operation ;
+  :script:get-argument (n-s) s:empty swap #1 script:operation ;
+  :include  (s-)                     #2 script:operation ;
+  :script:name (-s)          s:empty #3 script:operation ;
+
+  :script:current-file (-s)  s:empty #4 script:operation ;
+  :script:current-line (-n)          #5 script:operation class:data ; immediate
+  :script:ignore-to-eol (-)          #6 script:operation ;
+  :script:abort-include (-)          #7 script:operation ;
+
+  :abort (-) &Compiler v:off         #8 script:operation ;
+}}
+~~~
+
+## d:source
+
+~~~
+'interface/scripting.retro s:keep
+dup 'abort d:lookup d:source store
+dup 'script:abort-include d:lookup d:source store
+dup 'script:ignore-to-eol d:lookup d:source store
+dup 'script:current-line d:lookup d:source store
+dup 'script:current-file d:lookup d:source store
+dup 'script:name d:lookup d:source store
+dup 'include d:lookup d:source store
+dup 'script:get-argument d:lookup d:source store
+dup 'script:arguments d:lookup d:source store
+drop
+~~~

@@ -1,0 +1,749 @@
+#!/usr/bin/env retro
+
+# Overview
+
+This is an application for looking up and updating the
+documentation for the words provided by RETRO.
+
+# Prepare for Command Line Processing
+
+This application can take a variable number of arguments.
+
+I first check to make sure at least one was passed. If
+not, just exit.
+
+~~~
+script:arguments n:zero? [ #0 unix:exit ] if
+~~~
+
+To identify missing words, I need to be able to restrict the
+dictionary to the words prior to the ones added in this file.
+I define a placeholder that I can rely on as the first word,
+so I can patch the `Dictionary` as needed later.
+
+~~~
+:GLOSSARY-TOOL ;
+~~~
+
+If execution reaches this point there's at least one argument. 
+I use a loop to store arguments into an array named `Args`.
+
+~~~
+'Args d:create #32 allot
+#0 script:arguments
+  [ dup script:get-argument s:keep over &Args + store n:inc ] times
+  drop
+~~~
+
+Of the arguments, I only care about the first three. I am
+making copies of these here under names I can refer to
+later.
+
+~~~
+#0 &Args + fetch 'QUERY   s:const
+#1 &Args + fetch 'TARGET  s:const
+#2 &Args + fetch 'TARGET2 s:const 
+~~~
+
+
+# Data File
+
+I like plain text formats, so the data is stored as a plain text
+file, with one line per word. Each line has a number of fields.
+These are tab separated. The fields are:
+
+    | name                       | 0
+    | data stack                 | 1
+    | address stack              | 2
+    | float stack                | 3
+    | general description        | 4
+    | interpret time description | 5
+    | compile time description   | 6
+    | class handler              | 7
+    | example 1                  | 8
+    | example 2                  | 9
+    | namespace                  | 10
+    | interface                  | 11
+
+I use a variable named `SourceLine` to point to the current line
+contents.
+
+~~~
+'SourceLine var
+~~~
+
+I next define words to access each field. This involves helpers
+to skip over fields I'm not intersted in, a word to return a 
+specific field, and the top level wrappers over these.
+
+Rather than manually enter each of the field accessors, I am
+just listing them in a set and constructing the words via some
+simple code.
+
+~~~
+{{
+  :skip (n-) [ ASCII:HT s:split drop n:inc ] times ;
+  :select   (n-s)
+    @SourceLine swap skip ASCII:HT s:split nip ;
+
+---reveal---
+
+  #0 { 'name        'dstack     'astack     'fstack
+       'descr       'itime      'ctime      'class
+       'ex1         'ex2        'namespace  'interface }
+
+  [ 'field: s:prepend d:create
+    dup compile:lit &select compile:call compile:ret
+    &class:word reclass n:inc ] a:for-each drop
+}}
+~~~
+
+
+# Display an Entry
+
+I implement a word to display an entry. This will use a
+format like:
+
+    name
+
+      Data:  -
+      Addr:  -
+      Float: -
+
+    A description of the word.
+
+    Class Handler: class:word | Namespace: global | Interface Layer: all
+
+If there are specific notes on interpret or compile time
+actions, or any examples, they will be displayed after
+the description.
+
+~~~
+{{
+  :s:putfmt (s-)   s:format s:put ;
+  :name            field:name    '%s\n\n           s:putfmt ;
+  :data            field:dstack  '__Data:__%s\n    s:putfmt ;
+  :address         field:astack  '__Addr:__%s\n    s:putfmt ;
+  :float           field:fstack  '__Float:_%s\n\n  s:putfmt ;
+  :description     field:descr   '%s\n\n           s:putfmt ;
+  :interpret-time  field:itime s:length 0; drop
+                   field:itime   'Interpret_Time:\n__%s\n\n s:putfmt ;
+  :compile-time    field:ctime s:length 0; drop
+                   field:ctime   'Compile_Time:\n__%s\n\n   s:putfmt ;
+  :|                               '_|_ s:put ;
+  :class           field:class     'Class:_%s     s:putfmt ;
+  :namespace       field:namespace 'Namespace:_%s s:putfmt ;
+  :interface       field:interface 'Interface_Layer:_%s s:putfmt ;
+  :example1        field:ex1 '{n/a} s:eq? not 0; drop
+                   field:ex1 s:format '\nExample_#1:\n\n%s\n\n s:putfmt ;
+  :example2        field:ex2 '{n/a} s:eq? not 0; drop
+                   field:ex2 s:format '\nExample_#2:\n\n%s\n\n s:putfmt ;
+---reveal---
+  :display-result
+    name
+      data    (stack)
+      address (stack)
+      float   (stack)
+    description
+    interpret-time
+    compile-time
+    class | namespace | interface nl
+    example1
+    example2 ;
+}}
+~~~
+
+I also have an HTML display option. This is used with the HTML
+export and (eventually) ePub.
+
+~~~
+{{
+  :s:putfmt (s-)   s:format s:put ;
+  :s:putfmtx (s-)  s:format
+                   [ $< [ '&lt;  s:put ] case
+                     $> [ '&gt;  s:put ] case
+                     $& [ '&amp; s:put ] case
+                     c:put ] s:for-each ;
+
+  :div             '<div_style='margin-left:_1em;'> s:put  call  '</div> s:put nl ;
+  :header          '<h2>  s:put  call  '</h2>  s:put nl ;
+  :paragraph       '<p>   s:put  call  '</p>   s:put nl ;
+  :br              '<br>  s:put nl ;
+  :xmp             '<xmp_style='background:#f2f2f2'> s:put  call  '</xmp> s:put nl ;
+  :b               '<b> s:put s:putfmtx '</b> s:put sp ;
+
+  :name            field:name  '%s s:putfmtx ;
+  :data            field:dstack  'Data:  b  '%s s:putfmtx ;
+  :address         field:astack  'Addr:  b  '%s s:putfmtx ; 
+  :float           field:fstack  'Float: b  '%s s:putfmtx ;
+  :description     field:descr              '%s s:putfmtx ;
+  :|               '</td><td> s:put ;
+  :class           field:class     'Class:           b | '%s s:putfmt ;
+  :namespace       field:namespace 'Namespace:       b | '%s s:putfmt ;
+  :interface       field:interface 'Interface_Layer: b | '%s s:putfmt ;
+  :example1        field:ex1 '{n/a} s:eq? not 0; drop
+                   [ 'Example: b br br [ field:ex1 s:format s:put ] xmp ] paragraph ;
+  :example2        field:ex2 '{n/a} s:eq? not 0; drop
+                   [ 'Example: b br br [ field:ex2 s:format s:put ] xmp ] paragraph ;
+  :interpret-time  field:itime s:length 0; drop
+                   field:itime   '<p>Interpret_Time:\n__%s</p>\n\n s:putfmt ;
+  :compile-time    field:ctime s:length 0; drop
+                   field:ctime   '<p>Compile_Time:\n__%s</p>\n\n   s:putfmt ;
+  :table           '<table>  s:put call '</table>   s:put ;
+  :row             '<tr><td> s:put call '</td></tr> s:put ;
+---reveal---
+  :display-result<HTML>
+    [ name ] header
+    [ [ data    (stack) br
+        address (stack) br
+        float   (stack) ] paragraph ] div
+    [ description ] paragraph
+    interpret-time
+    compile-time
+    [ &class row &namespace row &interface row ] table
+    example1
+    example2 ;
+}}
+~~~
+
+This is a concise summary of a word.
+
+~~~
+{{
+  &Dictionary [ 'GLOSSARY-TOOL d:lookup fetch !Dictionary
+                #0 [ d:name s:length n:max ] d:for-each ] v:preserve
+  'MAX-LENGTH const
+  :pad s:length MAX-LENGTH swap - &sp times ;
+  :s:putfmt (s-)   s:format s:put ;
+  :name            field:name    dup s:put pad ;
+  :data            field:dstack  '__D:_%s    s:putfmt ;
+  :address         field:astack  '__A:_%s    s:putfmt ;
+  :float           field:fstack  '__F:_%s    s:putfmt ;
+  :description     field:descr   '\n%s\n\n   s:putfmt ;
+---reveal---
+  :display-concise-result
+    name
+      data    (stack)
+      address (stack)
+      float   (stack)
+    description ;
+  :display-concise-result<stack-only>
+    name
+      data    (stack)
+      address (stack)
+      float   (stack) nl ;
+}}
+~~~
+
+# Interactions
+
+With the command line data extracted, I can now move on
+to the words for handling specific interactions.
+
+There are five primary roles:
+
+* describe word
+* add word
+* delete word
+* edit word
+* export data
+* list missing words
+
+
+## Describe a Word
+
+~~~
+{{
+  :matched? (-f) field:name TARGET s:eq? ;
+---reveal---
+  :find-and-display-entry
+   'doc/words.tsv [ s:keep !SourceLine matched? [ display-result ] if ] file:for-each-line ;
+}}
+~~~
+
+
+## Missing Words
+
+Finding missing words is pretty easy. I read the names for each
+entry in the words data file into a set, then use the `d:for-each`
+combinator to see if the words in the dictionary are in the data
+file.
+
+If they are not, this will display the word names.
+
+To ensure this doesn't report the glossary words I use the patch
+point from earlier to set the dictionary to the original state
+before doing the checks.
+
+~~~
+{{
+  'GlossaryNames d:create  #4097 allot
+
+  :restrict-scope  'GLOSSARY-TOOL d:lookup fetch !Dictionary ;
+  :record-name     !SourceLine field:name s:keep over &GlossaryNames + store ;
+  :populate-names  #1 'doc/words.tsv [ record-name n:inc ] file:for-each-line
+                   n:dec &GlossaryNames store ;
+  :in-set?         dup &GlossaryNames a:contains/string? ;
+---reveal---
+  :display-missing
+    restrict-scope populate-names 
+    populate-names [ d:name in-set? [ drop ] [ s:put nl ] choose ] d:for-each ;
+}}
+~~~
+
+
+## Add a Word
+
+This just adds a stub to the end of the doc/words.tsv file. You'll
+need to run the edit commands for each field to fully populate
+it.
+
+~~~
+{{
+  'ADD var
+  :template '%s\t-\t-\t-\t{n/a}\t\t\tclass:word\t{n/a}\t{n/a}\t{n/a}\t{n/a}\t{n/a}\n ;
+  :prepare  'doc/words.tsv file:A file:open !ADD ;
+  :cleanup  @ADD file:close ;
+---reveal---
+  :add-word
+    prepare
+    TARGET template s:format [ @ADD file:write ] s:for-each
+    cleanup ;
+}}
+~~~
+
+
+## Delete a Word
+
+This works by reading each line and writing them to a new file.
+Entries that match the word to delete are discarded. The new
+file then replaces the original `doc/words.tsv`.
+
+~~~
+{{
+  'NEW var
+  :matched? (-f) field:name TARGET s:eq? ;
+  :prepare       '/tmp/words.new file:W file:open !NEW ;
+  :keep-entry    @SourceLine [ @NEW file:write ] s:for-each ASCII:LF @NEW file:write ;
+  :cleanup       @NEW file:close 'mv_/tmp/words.new_words.tsv unix:system ;
+---reveal---
+  :delete-entry
+    prepare
+    'doc/words.tsv [ s:keep !SourceLine matched? [ keep-entry ] -if ] file:for-each-line
+    cleanup ;
+}}
+~~~
+
+
+## Edit a Word
+
+Editing is a bit tricky. To keep things as simple as possible, I export
+each field to a separate file under `/tmp/`.
+
+~~~
+{{
+  :export-fields
+    field:name      '/tmp/glossary.name      file:spew
+    field:dstack    '/tmp/glossary.dstack    file:spew
+    field:astack    '/tmp/glossary.astack    file:spew
+    field:fstack    '/tmp/glossary.fstack    file:spew
+    field:descr     '/tmp/glossary.descr     file:spew
+    field:itime     '/tmp/glossary.itime     file:spew
+    field:ctime     '/tmp/glossary.ctime     file:spew
+    field:class     '/tmp/glossary.class     file:spew
+    field:ex1       '/tmp/glossary.ex1       file:spew
+    field:ex2       '/tmp/glossary.ex2       file:spew
+    field:namespace '/tmp/glossary.namespace file:spew
+    field:interface '/tmp/glossary.interface file:spew ;
+~~~
+
+Since I'm dumping a bunch of files into `/tmp/`, I also clean up
+when done.
+
+~~~
+  :delete-temporary
+    { '/tmp/glossary.name
+      '/tmp/glossary.dstack
+      '/tmp/glossary.astack
+      '/tmp/glossary.fstack
+      '/tmp/glossary.descr
+      '/tmp/glossary.itime
+      '/tmp/glossary.ctime
+      '/tmp/glossary.class
+      '/tmp/glossary.ex1
+      '/tmp/glossary.ex2
+      '/tmp/glossary.namespace
+      '/tmp/glossary.interface }
+    [ file:delete ] a:for-each ;
+~~~
+
+Cleaning the edited data is necessary. This entails:
+
+- removing any trailing newlines
+- converting internal newlines and tabs to escape sequences
+
+~~~
+  :clean-trailing dup s:length over + n:dec
+                  fetch [ ASCII:LF eq? ] [ ASCII:CR eq? ] bi or [ s:chop ] if ;
+  :clean-internal [ ASCII:LF [ $\ , $n , ] case
+                    ASCII:CR [ $\ , $n , ] case
+                    ASCII:HT [ $\ , $t , ] case
+                    ,
+                  ] s:for-each #0 , ;
+  :clean
+    clean-trailing here [ clean-internal ] dip ;
+~~~
+
+After an edit, I need to reassemble the pieces and write them out to
+the file. I'll use `FOUT` as a variable for the file ID.
+
+~~~
+  'FOUT var
+~~~
+
+And provide a word like `s:put` that writes to this:
+
+~~~
+  :write-line (s-) [ @FOUT file:write ] s:for-each ;
+  :write-nl   (-)  ASCII:LF @FOUT file:write ;
+~~~
+
+~~~
+  :generate-entry
+    s:empty [ '/tmp/glossary.fstack    file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.astack    file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.dstack    file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.name      file:slurp ] sip clean s:keep
+    '%s\t%s\t%s\t%s\t s:format write-line
+    s:empty [ '/tmp/glossary.class     file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.ctime     file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.itime     file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.descr     file:slurp ] sip clean s:keep
+    '%s\t%s\t%s\t%s\t s:format write-line
+    s:empty [ '/tmp/glossary.interface file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.namespace file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.ex2       file:slurp ] sip clean s:keep
+    s:empty [ '/tmp/glossary.ex1       file:slurp ] sip clean s:keep
+    '%s\t%s\t%s\t%s\t s:format write-line ;
+~~~
+
+Next, get the editor from the $EDITOR environment variable.
+
+~~~
+  'EDITOR s:empty [ unix:getenv ] sip 'EDITOR s:const
+~~~
+
+~~~
+  :edit:field (s-)
+    EDITOR '%s_/tmp/glossary.%s s:format unix:system ;
+~~~
+
+~~~
+  :select-field
+    export-fields
+    TARGET
+    'name      [ 'name      edit:field ] s:case
+    'dstack    [ 'dstack    edit:field ] s:case
+    'astack    [ 'astack    edit:field ] s:case
+    'fstack    [ 'fstack    edit:field ] s:case
+    'descr     [ 'descr     edit:field ] s:case
+    'itime     [ 'itime     edit:field ] s:case
+    'ctime     [ 'ctime     edit:field ] s:case
+    'class     [ 'class     edit:field ] s:case
+    'ex1       [ 'ex1       edit:field ] s:case
+    'ex2       [ 'ex2       edit:field ] s:case
+    'namespace [ 'namespace edit:field ] s:case
+    'interface [ 'interface edit:field ] s:case
+    drop ;
+~~~
+
+~~~
+  :prepare '/tmp/words.new file:W file:open !FOUT ;
+  :cleanup 'mv_/tmp/words.new_words.tsv unix:system ;
+~~~
+
+~~~
+---reveal---
+  :handle-edit
+    prepare
+    'doc/words.tsv
+    [ s:keep !SourceLine field:name TARGET2 s:eq?
+      [ select-field generate-entry ]
+      [ @SourceLine  write-line     ] choose write-nl
+    ] file:for-each-line
+    @FOUT file:close delete-temporary
+    cleanup ;
+}}
+~~~
+
+
+## Export Data
+
+In addition to providing a readable piece of documentation for each
+word, I provide the ability to export the data into a few formats.
+
+### Glossary
+
+The glossary file consists of the documentation for each word, with
+a separator bar between each entry.
+
+#### Text
+
+~~~
+{{
+  :horizontal-line #72 [ $- c:put ] times nl nl ;
+  :export-glossary
+    'doc/words.tsv
+    [ s:keep !SourceLine display-result horizontal-line ] file:for-each-line ;
+
+  :export-concise
+    'doc/words.tsv
+    [ s:keep !SourceLine display-concise-result ] file:for-each-line ;
+
+  :export-concise-stack
+    'doc/words.tsv
+    [ s:keep !SourceLine display-concise-result<stack-only> ] file:for-each-line ;
+
+~~~
+
+#### HTML
+
+~~~
+  :export-html
+    'doc/words.tsv [ s:keep !SourceLine
+                     display-result<HTML> '<hr/> s:put nl ] file:for-each-line ;
+~~~
+
+#### TSV
+
+I also provide for exporting the tab separated file itself. This will
+strip out fields beyond the standard set, which can save some space if
+you edit/save the TSV data with a spreadsheet application.
+
+~~~
+  :display-fields
+    { &field:name
+      &field:dstack
+      &field:astack
+      &field:fstack
+      &field:descr
+      &field:itime
+      &field:ctime
+      &field:class
+      &field:ex1
+      &field:ex2
+      &field:namespace
+      &field:interface }
+    [ call s:put tab ] a:for-each nl ;
+
+  :export-tsv
+    'doc/words.tsv [ s:keep !SourceLine display-fields ] file:for-each-line ;
+---reveal---
+~~~
+
+### Handle Exports
+
+This is a second level command processor for deciding which export format
+to use.
+
+~~~
+  :export-data
+    TARGET
+    'concise        [ export-concise       ] s:case
+    'concise-stack  [ export-concise-stack ] s:case
+    'glossary       [ export-glossary      ] s:case
+    'html           [ export-html          ] s:case
+    'tsv            [ export-tsv           ] s:case
+    drop ;
+~~~
+
+
+## Help
+
+~~~
+:show-help
+  { 'RETRO_Glossary_Tool
+    '--------------------------------
+    'describe_<wordname>
+    'delete_<wordname>
+    'add_<wordname>
+    'edit_<field>_<wordname>
+    'export_<format>
+    'missing
+    '--------------------------------
+    'Editor_Fields:
+    '__name
+    '__dstack
+    '__astack
+    '__fstack
+    '__descr
+    '__itime
+    '__ctime
+    '__class
+    '__ex1
+    '__ex2
+    '__namespace
+    '__interface
+    '--------------------------------
+    'Export_Formats:
+    '__glossary____concise
+    '__tsv_________concise-stack
+    '--------------------------------
+  } [ s:put nl ] a:for-each ;
+~~~
+
+
+# Gopher and HTTP Server
+
+This tool embeds a tiny Gopher and HTTP server designed to run
+under inetd.
+
+First, set the port and server to use. I default to 9999 and
+forth.works.
+
+~~~
+#9999           'PORT     const
+'forth.works    'DOMAIN s:const
+~~~
+
+Next, words to display the main index (when requesting / or an
+empty selector).
+
+Gopher protocol for directories dictates the following format:
+
+    <type><description>\t<selector>\t<server>\t<port>\r\n
+
+So `display-entry` constructs these. The selectors chosen are
+`desc wordname`; the server is hardcoded to forthworks.com in
+this.
+
+~~~
+{{
+  :display-entry (-)
+    $0 c:put field:name s:put tab
+    '/desc_ s:put field:name s:put tab
+    DOMAIN s:put tab
+    PORT   n:put
+    '\r\n  s:format s:put ;
+~~~
+
+Next, `gopher:list-words` which iterates over each entry,
+generating the directory line for each.
+
+~~~
+  :gopher:list-words (-)
+    'doc/words.tsv [ s:keep !SourceLine display-entry ] file:for-each-line ;
+~~~
+
+With the Gopher side of the index taken care of, I turn my
+attentions towards HTTP. In this case, the index is an HTML
+file with a bunch of hyperlinks. Since we can't just pass
+any non-whitespace in the URLs, this uses the line number in
+**words.tsv** instead.
+
+As with the Gopher, there's a `display-entry` which makes
+the HTML for each line, and an `http:list-words` which uses
+this to build an index.
+
+~~~
+  :sanitize (s-s)
+    here buffer:set
+    [ $< [ '&lt;  [ buffer:add ] s:for-each ] case
+      $> [ '&gt;  [ buffer:add ] s:for-each ] case
+      $& [ '&amp; [ buffer:add ] s:for-each ] case
+      buffer:add ] s:for-each buffer:start s:temp ;
+
+  :display-entry (n-n)
+    field:name sanitize over '<a_href="/%n">%s</a><br>\n s:format s:put ;
+
+  :http:list-words (-)
+    #0 'doc/words.tsv [ s:keep !SourceLine display-entry n:inc ] file:for-each-line drop ;
+~~~
+
+Next, words to display a specific word.
+
+~~~
+  'Target var
+  :matched? (-f) field:name @Target s:eq? ;
+
+  :gopher:display
+   'doc/words.tsv [ s:keep !SourceLine matched? [ display-result ] if ] file:for-each-line ;
+~~~
+
+And then the actual top level server.
+
+~~~
+  :eol? (c-f)
+    [ ASCII:CR eq? ] [ ASCII:LF eq? ] [ ASCII:HT eq? ] tri or or ;
+
+  :s:get (a-)
+    buffer:set [ c:get dup buffer:add eol? not ] while ;
+
+  'Selector d:create
+    #1024 allot
+
+  :css (-)
+    { '<style>
+      'tt,_a,_pre,_xmp_{_white-space:_pre;_}
+      '*_{_font-family:_monospace;_color:_#aaa;_background:_#121212;_}
+      'a_{_color:_#EE7600;_}
+      '</style>
+    } [ s:put sp ] a:for-each ;
+
+  :entry display-result<HTML> ;
+
+  :http:display (-)
+    #0 'doc/words.tsv [ s:keep !SourceLine dup-pair eq? [ entry ] if n:inc ] file:for-each-line drop-pair ;
+
+  :send-http-headers
+    'HTTP/1.0_200_OK\nContent-Type:_text/html\n\n s:format s:put ;
+
+  :page-header
+    css
+    '<h2> s:put 
+    PORT DOMAIN '<a_href="http://%s:%n">RETRO_Glossary</a> s:format s:put
+    '</h2><hr> s:put nl ;
+
+  :handle-http
+    page-header
+    &Selector ASCII:SPACE s:tokenize #1 a:th fetch
+    dup s:length #1 eq?
+      [ drop http:list-words ]
+      [ n:inc s:to-number http:display ] choose ;
+
+  :handle-gopher
+    &Selector ASCII:SPACE s:tokenize #1 a:th fetch
+    s:chop s:keep !Target gopher:display ;
+
+---reveal---
+
+  :server
+    &Selector s:get
+    &Selector #0 #5 s:substr
+    '/desc [ handle-gopher ] s:case
+    'GET_/ [ send-http-headers handle-http ] s:case
+    drop gopher:list-words ;
+}}
+~~~
+
+# Finish
+
+This checks the command line arguments and calls the proper words to
+handle each case.
+
+~~~
+:process-arguments
+  QUERY
+  'describe [ find-and-display-entry nl ] s:case
+  'export   [ export-data               ] s:case
+  'edit     [ handle-edit               ] s:case
+  'add      [ add-word                  ] s:case
+  'delete   [ delete-entry              ] s:case
+  'serve    [ server                    ] s:case
+  'missing  [ display-missing           ] s:case 
+  drop show-help ;
+~~~
+
+~~~
+process-arguments
+~~~

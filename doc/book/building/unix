@@ -1,0 +1,72 @@
+# Building on BSD, Linux, macOS, and other Unix Targets
+
+Retro is well supported on BSD (tested on FreeBSD, NetBSD,
+OpenBSD), Linux, and macOS systems. It should build on any
+of these without issue.
+
+## Requirements
+
+- c compiler & linker
+- standard headers
+- make
+
+## Process
+
+For a standard 32-bit system:
+
+Run `make`
+
+This will build the toolchain and then the main `retro`
+executable.
+
+## Executables
+
+In the `bin/` directory, you should see the following:
+
+    retro
+    retro-unu
+    retro-muri
+    retro-extend
+    retro-embedimage
+    retro-describe
+
+## Test The Build
+
+You can conduct a quick test of the build by running `bin/retro`:
+
+    ./bin/retro
+
+Exit by typing `bye` and pressing enter.
+
+## Installation
+
+You can install Retro globally on BSD systems (and possibly Linux)
+by doing:
+
+    doas make install
+
+or:
+
+    sudo make install
+
+## Platform Specific Notes
+
+### Linux
+
+To build on Linux, you need to link with *libdl* if using the optional
+FFI. To do this, edit the `GNUmakefile` and uncomment this before building:
+
+    # LIBDL += -ldl
+
+### Haiku
+
+To build on Haiku, you need to link with the *network* library if using
+sockets. E.g.:
+
+    make LDFLAGS=-lnetwork
+
+## Issues
+
+If you run into any build issues, please send details to
+crc@forth.works so I can work on addressing them as quickly
+as possible.

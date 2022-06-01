@@ -1,0 +1,32 @@
+#!/usr/bin/env retro
+
+This is used to assemble the Markdown copy of the RETRO Handbook.
+
+The individual chapters are in the `book/` directory. This is set
+using the `BOOK-BASE` constant.
+
+~~~
+'doc/book/  'BOOK-BASE s:const
+'chapters/  'OUT-BASE s:const
+~~~
+
+The chapters are specified it the `TOC`, a named array. These are
+the file names, they will be included in order. I am structuring
+it using separate file to make the actual editing process easier
+for me.
+
+~~~
+'tools/book-chapters.retro include
+~~~
+
+
+~~~
+'Out var
+
+:import    BOOK-BASE over OUT-BASE '>%s%s.html_retro_example/markdown-to-xhtml.retro_%s%s s:format unix:system ;
+:assemble  [ #1 a:fetch import $. c:put ] a:for-each nl ;
+~~~
+
+~~~
+TOC assemble
+~~~

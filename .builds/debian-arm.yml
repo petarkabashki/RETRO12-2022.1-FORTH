@@ -1,0 +1,31 @@
+image: debian/unstable
+arch: arm64
+packages:
+- curl
+sources:
+- https://git.sr.ht/~crc_/retroforth
+tasks:
+- build: |
+    cd retroforth
+    make
+- repl: |
+    cd retroforth
+    make bin/retro-repl
+- compiler: |
+    cd retroforth
+    make bin/retro-compiler
+- install: |
+    cd retroforth
+    sudo make install
+- test: |
+    cd retroforth
+    retro example/1D-Cellular-Automota.retro
+    retro example/sea-level-rise.retro
+#- test-compiler: |
+#    cd retroforth
+#    curl http://forth.works/share/17af8e4329d13fea01e7afcdf3c9aefd -o hello.retro
+#    ./bin/retro-compiler hello.retro hello
+#    ./a.out
+- check-missing: |
+    cd retroforth
+    retro tools/glossary.retro missing

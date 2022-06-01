@@ -1,0 +1,81 @@
+Numbers without the # Sigil
+
+RETRO requires a # sigil to identify numbers. But since new
+sigils can be defined, it's possible to define sigils for
+the number starting with 0-9.
+
+This is actually easy (at least for positive numbers). Just
+define a sigil handler that prepends the initial value back
+on the string (since the string sans the sigil is passed to
+the handler) and pass it to `s:to-number` and `class:data`.
+
+~~~
+{{
+  :process-with-sigil (s-n)
+    s:prepend s:to-number class:data ;
+---reveal---
+  :sigil:1 (s-n) '1 process-with-sigil ; immediate
+  :sigil:2 (s-n) '2 process-with-sigil ; immediate
+  :sigil:3 (s-n) '3 process-with-sigil ; immediate
+  :sigil:4 (s-n) '4 process-with-sigil ; immediate
+  :sigil:5 (s-n) '5 process-with-sigil ; immediate
+  :sigil:6 (s-n) '6 process-with-sigil ; immediate
+  :sigil:7 (s-n) '7 process-with-sigil ; immediate
+  :sigil:8 (s-n) '8 process-with-sigil ; immediate
+  :sigil:9 (s-n) '9 process-with-sigil ; immediate
+~~~
+
+`0` is a special case. Since RETRO has `0;` as a control
+flow word, the `0` sigil would prevent using it. So the
+handler for this checks to see if the part following the
+sigil is a `;`. If so, it'll fall back to `0;`, otherwise
+it treats the token as a number.
+
+~~~
+  :sigil:0 (s-n)
+    dup '; s:eq?
+    [ drop &0; call ]
+    [ '0 process-with-sigil ] choose ; immediate
+}}
+~~~
+
+For single digits, define each digit as a word. (Sigils
+are not processed for tokens with nothing other than the
+sigil character, so this takes care of the issue).
+
+~~~
+:0 (-n) #0 ;
+:1 (-n) #1 ;
+:2 (-n) #2 ;
+:3 (-n) #3 ;
+:4 (-n) #4 ;
+:5 (-n) #5 ;
+:6 (-n) #6 ;
+:7 (-n) #7 ;
+:8 (-n) #8 ;
+:9 (-n) #9 ;
+~~~
+
+Handling negative numbers is a bigger headache though. By
+convention, RETRO uses - to imply "not" (as in `-eq?`). So
+to handle the `-` sigil for numbers, it needs to fall back
+to a dictionary search if the token isn't actually a number.
+
+~~~
+{{
+  :numeric? (s-sf)
+    dup fetch c:digit? ;
+  :in-dictionary? (s-df)
+    '- s:prepend d:lookup dup n:zero? ;
+  :report-error (d-)
+    drop err:notfound ;
+  :call-with-class (d-)
+    [ d:xt fetch ] [ d:class fetch ] bi call ;
+---reveal---
+  :sigil:- (s-)
+    numeric?
+    [ s:to-number n:negate class:data ]
+    [ in-dictionary? &report-error &call-with-class choose ] choose ; immediate
+}}
+~~~
+

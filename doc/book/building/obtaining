@@ -1,0 +1,55 @@
+# Obtaining Retro
+
+## Stable Releases
+
+I periodically make stable releases. This will typically happen
+quarterly.
+
+- http://forthworks.com/retro
+- http://forth.works
+
+## Snapshots
+
+A lot of development happens between releases. I make snapshots
+of my working source tree nightly (and often more often).
+
+The latest snapshot can be downloaded from the following stable
+URLs:
+
+* http://forthworks.com/retro/r/latest.tar.gz
+* gopher://forthworks.com/9/retro/r/latest.tar.gz
+
+## Fossil Repository
+
+I use a Fossil repository to manage development. To obtain a
+copy of the repository install Fossil and:
+
+    fossil clone http://forthworks.com:8000 retro.fossil
+    mkdir retro
+    cd retro
+    fossil open /path/to/retro.fossil
+
+See the Fossil documentation for details on using Fossil to
+keep your local copy of the repository current.
+
+This will let you stay current with my latest changes faster
+than the snapshots, but you may occasionally encounter bigger
+problems as some commits may be in a partially broken state.
+
+If you have problems, check the version of Fossil you are
+using. I am currently using Fossil 2.10, you may experience
+issues checking out or cloning if using older versions.
+
+## git Repository
+
+There is now a read-only mirror of the fossil repository
+provided via git. This is hosted on sr.ht.
+
+    git clone https://git.sr.ht/~crc_/retroforth
+
+## Notes
+
+I personally recommend using either a recent snapshot or a
+build from one of the repositories. This will reflect the
+latest system as I use it, and are normally reliable as I
+run them daily for my production systems.

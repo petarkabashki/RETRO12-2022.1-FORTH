@@ -1,0 +1,11 @@
+#!/usr/bin/env retro
+
+~~~
+'Line var
+:parse  (s-a) ASCII:HT s:tokenize dup !Line ;
+:word   (-s)  #0 script:get-argument ;
+:match? (a-f) #0 a:fetch word s:eq? ;
+:fields (-ss) @Line [ #2 a:fetch ] [ #1 a:fetch ] bi ;
+:display (-)  fields s:put $: c:put s:put nl ;
+'tags [ &Heap [ parse match? [ display ] if ] v:preserve ] file:for-each-line
+~~~

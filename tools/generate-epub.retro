@@ -1,0 +1,178 @@
+#!/usr/bin/env retro
+
+This tool is intended to be used to create an epub version of the
+standard documentation.
+
+An epub is just a .zip file containing a bunch of XHTML files and
+a few files containing metadata.
+
+Our structure will look like:
+
+    Book Root Directory
+      |-- mimetype
+      |-- META-INF directory
+      |   `-- container.xml
+      |-- content.opf
+      |-- toc.ncx
+      |-- chapters/...
+
+Begin by defining some helper functions for writing to a
+file.
+
+~~~
+'tools/book-chapters.retro include
+
+'FID var
+:file:s:put [ @FID file:write ] s:for-each ;
+:file:nl    ASCII:CR @FID file:write ;
+:unix:mkdir 'mkdir_-p_%s s:format unix:system ;
+~~~
+
+Create the directories needed.
+
+~~~
+'Create_directories s:put nl
+{ 'chapters
+  'chapters/building
+  'chapters/general
+  'chapters/internals
+  'chapters/tech-notes
+  'chapters/techniques
+  'chapters/toolchain
+  'chapters/toolchain/info
+  'chapters/toolchain/man
+  'epub
+  'epub/META-INF } [ dup tab s:put nl unix:mkdir ] a:for-each
+~~~
+
+Then create the `mimetype` file. This is supposed to be written
+without a trailing newline.
+
+~~~
+'Generate_`mimetype` s:put nl
+'application/epub+zip 'epub/mimetype file:spew
+~~~
+
+Then create `META-INF/container.xml`.
+
+~~~
+'Generate_`container.xml` s:put nl
+'epub/META-INF/container.xml file:open-for-writing !FID
+
+{ '<?xml_version="1.0"?>
+  '<container_version="1.0"_xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  '<rootfiles>
+  '____<rootfile_full-path="content.opf"_media-type="application/oebps-package+xml"/>
+  '</rootfiles>
+  '</container>
+} [ file:s:put file:nl ] a:for-each
+
+@FID file:close
+~~~
+
+# Create the TOC NCX file
+
+~~~
+'Generate_`TOC.ncx` s:put nl
+'epub/TOC.ncx file:open-for-writing !FID
+
+{ '<?xml_version="1.0"_encoding="UTF-8"_?>
+  '<ncx_version="2005-1"_xml:lang="en"_xmlns="http://www.daisy.org/z3986/2005/ncx/">
+  '<head>
+  '____<meta_name="dtb:uid"_content="works.forth.retro-manual"/>
+  '____<meta_name="dtb:depth"_content="1"/>
+  '</head>
+  '<docTitle>
+  '____<text></text>
+  '</docTitle>
+  '<navMap>
+} [ file:s:put file:nl ] a:for-each
+
+:a:unpack [ ] a:for-each ;
+
+#1 TOC [ a:unpack 'abc 'acbaaa reorder '____<navPoint_id="CHAP%n"_playOrder="%n"><navLabel><text>Chapter_%n:_%s</text></navLabel><content_src="chapters/%s.html"/></navPoint> s:format file:s:put file:nl n:inc ] a:for-each drop
+
+{ '</navMap>
+  '</ncx>
+} [ file:s:put file:nl ] a:for-each
+
+@FID file:close
+~~~
+
+
+# Create the CONTENT.OPF
+
+Create `content.opf`. This will need to lest all of the files
+that are used in the book.
+
+~~~
+'Generate_`content.opf` s:put nl
+'epub/content.opf file:open-for-writing !FID
+
+{ '<?xml_version="1.0"_encoding="utf-8"_standalone="yes"?>
+  '<package_xmlns="http://www.idpf.org/2007/opf"_unique-identifier="BookID"_version="2.0">
+  '__<metadata_xmlns:dc="http://purl.org/dc/elements/1.1/"_xmlns:opf="http://www.idpf.org/2007/opf">
+  '____<dc:title>RETRO_Forth_:_User_Manual</dc:title>
+  '____<dc:identifier_id="BookID"_opf:scheme="CustomID">works.forth.retro-manual</dc:identifier>
+  '____<dc:language>en</dc:language>
+  '____<dc:creator_opf:role="aut">Charles_Childers</dc:creator>
+  '__</metadata>
+  '__<manifest>
+  '____<item_id="cover"_href="Book-Cover.png"_media-type="image/png"_properties="cover-image"/>
+  '____<item_id="ncx"_href="TOC.ncx"_media-type="application/x-dtbncx+xml"/>
+} [ file:s:put file:nl ] a:for-each
+
+#1 TOC [ #1 a:fetch over swap '____<item_href="chapters/%s.html"_id="CHAP%n"_media-type="application/xhtml+xml"/> s:format file:s:put file:nl n:inc ] a:for-each
+drop
+
+{ '__</manifest>
+  '__<spine_toc="ncx">
+} [ file:s:put file:nl ] a:for-each
+
+#1 TOC [ drop dup '____<itemref_idref="CHAP%n"_linear="yes"/> s:format file:s:put file:nl n:inc ] a:for-each drop
+
+{ '__</spine>
+  '__<guide>
+  '__</guide>
+  '</package>
+} [ file:s:put file:nl ] a:for-each
+@FID file:close
+~~~
+
+# Generate the Chapters
+
+~~~
+'Convert_chapters_to_XHTML s:put nl
+'retro_tools/epub/chapters-to-xhtml.retro unix:system
+~~~
+
+# Assemble the pieces
+
+~~~
+'Relocate_files s:put nl
+'epub unix:chdir
+'cp_-r_../chapters_. unix:system
+'cp_../doc/Book-Cover.png_. unix:system
+~~~
+
+# Zip Everything
+
+~~~
+'Create_epub s:put nl
+'zip_-0Xqv_../book.epub_mimetype unix:system
+'zip_-Xr9Dqv_../book.epub_content.opf unix:system
+'zip_-Xr9Dqv_../book.epub_TOC.ncx unix:system
+'zip_-Xr9Dqv_../book.epub_META-INF unix:system
+'zip_-Xr9Dqv_../book.epub_chapters unix:system
+'zip_-Xr9Dqv_../book.epub_Book-Cover.png unix:system
+'.. unix:chdir
+~~~
+
+# Clean Up
+
+Cleanup is the final step. Remove the temporary epub directory
+
+~~~
+'Cleanup s:put nl
+'rm_-rf_epub_chapters unix:system
+~~~

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>RETRO FORTH</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="image.js"></script>
+  <script src="nga.js"></script>
+</head>
+
+<body onLoad='loadproject()'>
+  <div class='left'>
+    <textarea id='input' onchange='saveproject()'>
+    </textarea>
+    <iframe src='http://forth.works:9999'></iframe>
+  </div>
+  <div class='right'>
+      <div style='padding: 8px'>
+      <button onclick='cls()'>Clear</button>
+      <button onclick='go()'>Go</button>
+      </div>
+      <textarea id='console' style='height: 88vh' readonly></textarea>
+      <canvas id="canvas" width="300" height="300"></canvas>
+  </div>
+</body>
+
+</html>
